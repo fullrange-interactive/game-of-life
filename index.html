@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				color: #808080;
+                min-height:100%;
+                min-width:100%;
+				font-family:Monospace;
+				font-size:13px;
+				text-align:center;
+
+				background-color: #ffffff;
+				margin: 0px;
+				overflow: hidden;
+			}
+			body:after
+			{
+				content: '';
+				position: absolute;
+				left: 0;
+				top: 0;
+				bottom: 0;
+				right: 0;
+				background-image: url(mask-v2.png);
+				background-size: contain;
+				background-position: 0% 0%;
+				background-repeat: no-repeat;
+			}
+
+			#info {
+				position: absolute;
+				top: 0px; width: 100%;
+				padding: 5px;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="container"></div>
+		<script src="lib/three.js/build/three.js"></script>
+
+        <!-- ThreeJS Libs -->
+		<script src="lib/three.js/Projector.js"></script>
+		<script src="lib/three.js/CanvasRenderer.js"></script>
+		<script src="lib/three.js/stats.min.js"></script>
+        <script src="lib/random.js"></script>
+		<script>
+            // The creature
+            var Creature = function() {
+
+               var _diameterSize, _position = new THREE.Vector2(), _movement = new THREE.Vector2();
+               var _worldWidth,_worldHeight;
+               var _i = 0;
+
+               this.run = function() {
+                  if(_movement.x == 0 && _movement.y == 0) {
+                     this.randomizeMovementVector();
+                     this.randomizeMovementDirection();
+                  } 
+                  this.move(); 
+                  this.checkWorldBounds();
+                  if(_diameterSize > 60) {
+                    // Kill
+                      return "dead";
+                  }
+                  if(_i == 1500) {
+                      this.randomizeMovementVector();
+                      this.randomizeMovementDirection();
+                    _i= 0;
+                  }
+                  _i++;
+                        
+               };
+               this.move = function() {
+                   _position.add(_movement);
+                   this.position = _position;
+               }
+            
+                this.setColor = function(value) {
+                    _color = value;
+                    this.color = value;
+                };
+
+                this.setPosition = function(x,y) {
+                    _position.x = x;
+                    _position.y = y;
+                    this.position = _position;
+                };
+                
+                this.setSize = function(value) {
+                    _diameterSize = value;
+                    this.diameterSize = value;
+                };
+                
+                this.setMovementVector = function(x,y) {
+                    _movement.set(x,y);
+                    this.movement = _movement;
+                } 
+
+                // Randomizes the intensity of the movement vector 
+                this.randomizeMovementVector = function(value) {
+                    _movement.set((Math.random()*4)/10,(Math.random()*4)/10);
+                    this.movement = _movement; 
+                };
+                
+                this.randomizeMovementDirection = function() {
+                    if(Math.random() > 0.5) {
+                        _movement.x *= -1;
+                    } 
+                    if(Math.random() > 0.5) {
+                        _movement.y *= -1;
+                    }
+                    this.movement = _movement;
+                }
+                /* Set the world size */
+                this.setWorldSize = function(w,h) {
+                   _worldWidth = w;
+                   _worldHeight = h;
+                  this.worldWidth = w;
+                  this.worldHeight = h;
+                  
+                }
+                // Avoids the creature from going out of bounds 
+                //(like the DVD logo on old-school DVD players) 
+                this.checkWorldBounds = function() {
+                    
+                    halfX = _worldWidth / 2;
+                    halfY = _worldHeight / 2;
+
+                    if(_position.x >= halfX) {
+                        // Invert movement - go away from wall
+                        this.randomizeMovementVector();
+                        _movement.x *= -1;
+                    }
+                    if(_position.x <= -halfX) {
+                        this.randomizeMovementVector();
+                    }
+                    if(_position.y <= -halfY ) {
+                        this.randomizeMovementVector();
+                    }
+                    if(_position.y >= halfY) {
+                        this.randomizeMovementVector();
+                        _movement.y *= -1;
+                    }
+                    this.movement = _movement;
+
+                }
+                
+                
+
+            }
+            // The food item 
+            var Food = function() {
+
+                var _position = new THREE.Vector2(), _color = 0xffffff, _foodSize;
+                this.setColor = function(value) {
+                    _color = value;
+                    this.color = value;
+                };
+                this.setPosition = function(x,y) {
+                    _position.x = x;
+                    _position.y = y;
+                    this.position = _position;
+                };
+                this.setFoodSize = function(value) {
+                    _foodSize = value;
+                    this.foodSize = value;
+                };
+            }
+
+            
+			var SCREEN_WIDTH = window.innerWidth,
+			SCREEN_HEIGHT = window.innerHeight,
+			SCREEN_WIDTH_HALF = SCREEN_WIDTH  / 2,
+			SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
+
+			var camera, scene, renderer;
+            
+			var creatures, creature, foodItems,foodItem;
+
+			var creatureCircles, creatureCircle;
+            var foodCircles, foodCircle;
+
+			var stats;
+			init();
+			animate();
+
+
+        		function init() {
+                    
+                    // Objects 
+                    creatures = [];
+                    foodItems = [];
+
+                    // Graphics 
+                    creatureCircles = [];
+                    foodCircles = [];
+
+				    // Init camera and scene
+				    camera = new THREE.OrthographicCamera( SCREEN_WIDTH /-2,SCREEN_WIDTH /2,  SCREEN_HEIGHT /2 , SCREEN_HEIGHT/ -2, 1, 1e6 );
+				    camera.position.set(0,0,500);
+
+				    scene = new THREE.Scene();
+                    scene.add(camera);
+
+                    // Create initial food circles 
+                    for (var i = 0; i < 200; i++) {
+
+
+                        foodItem = new Food();
+                        foodItem.setFoodSize((Math.random()*2)+0.5);
+                        foodItem.setPosition(getRandomIntInclusive(-SCREEN_WIDTH_HALF,SCREEN_WIDTH_HALF),getRandomIntInclusive(-SCREEN_HEIGHT_HALF,SCREEN_HEIGHT_HALF));
+                        foodItem.color = 0xffffff;
+                        
+                        foodItems[i] = foodItem;
+
+                        var foodCircleGeometry = new THREE.CircleGeometry(foodItem.foodSize,8);
+                        var material = new THREE.MeshBasicMaterial( { color: 0xffffff});
+
+                        foodCircle = new THREE.Mesh(foodCircleGeometry,material);
+                        foodCircle.position.set(foodItem.position.x,foodItem.position.y,0); 
+                        foodCircles[i] = foodCircle;
+                        scene.add(foodCircle);
+                    }     
+                
+                // Set the timer to save the current state to local storage each minute
+				window.setTimeout(saveCurrentStateToLocalStorage,(1000*60)*1);
+                
+                creature = new Creature();
+
+                
+				renderer = new THREE.CanvasRenderer();
+				renderer.setClearColor( 0x000000,0 );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
+
+				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+                document.addEventListener( 'mouseup', addCreature, false);
+
+				document.body.appendChild( renderer.domElement );
+
+				stats = new Stats();
+				document.getElementById( 'container' ).appendChild(stats.dom);
+
+				//
+
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+            /*
+               Creates and adds a creature to the scene
+             */
+            function addCreature(params) {
+
+                mouseX = event.clientX - SCREEN_WIDTH_HALF;
+                mouseY = SCREEN_HEIGHT_HALF - event.clientY;
+                creature = new Creature();
+                creature.setColor(0x00ff00);
+                creature.setPosition(mouseX,mouseY);
+                creature.setSize(5);
+                creature.setWorldSize(SCREEN_WIDTH,SCREEN_HEIGHT);
+                var creatureCircleGeometry = new THREE.CircleGeometry(creature.diameterSize,32);
+                var material = new THREE.MeshBasicMaterial( { color: creature.color});
+                creatureCircle = new THREE.Mesh(creatureCircleGeometry,material);
+                creatureCircle.position.set(creature.position.x,creature.position.y,0); 
+
+                
+                creatures[creatures.length] = creature;
+                creatureCircles[creatureCircles.length] = creatureCircle;
+                scene.add(creatureCircle);
+            }    
+
+            /*
+               Creates and adds food to the scene
+            */
+            function addFood(event) {
+
+                var newFood = new Food();
+
+                return;
+            }
+
+            /*
+              Saves the current state of to local storage, each boid and bird. 
+            */
+            function saveCurrentStateToLocalStorage() {
+                
+                var localStorage = window.localStorage;
+                // Test if local storage exists
+                if(!testLocalStorage) {
+                    throw "Cannot run without local storage support...";
+                }
+                //var boids = JSON.stringify(this.boids);
+                //localStorage.setItem("elements",elements);
+
+                // reset the timer to save the current state to local storage each minute
+                window.setTimeout(saveCurrentStateToLocalStorage,(1000*60)*1);
+            }
+            function testLocalStorage() {
+            
+                try {
+                    var storage = window.localStorage, x='__storage_test__';
+                    storage.setItem(x,x);
+                    storage.removeItem(x);
+                    return true;
+                }
+                catch(e) {
+                    return false;                
+                }
+            }
+
+            /*
+              Restores state saved prior 
+            */
+            function restoreStateFromLocalStorage() {
+                
+                var localStorage = window.localStorage;
+
+                if(!testLocalStorage) {
+                    throw "Cannot run without local storage support...";
+                }
+
+                var elements = localStorage.getItem("elements")
+                if (!elements) {
+                    return false;
+                }
+
+                // Recreate boid objects 
+                //boids = JSON.parse(boids);
+                //return boids;
+
+            }
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+                
+                // Update world size 
+                SCREEN_WIDTH = window.innerWidth;
+                SCREEN_HEIGHT = window.innerHeight;
+                SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
+                SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
+
+			}
+
+			function onDocumentMouseMove( event ) {
+                return;
+
+			}
+            
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				stats.begin();
+				render();
+				stats.end();
+
+			}
+
+			function render() {
+
+				for ( var i = 0, il = creatures.length; i < il; i++ ) {
+                    var creature = creatures[i];
+                    var creatureCircle = creatureCircles[i];
+                    creatureCircle.position.copy(creature.position);
+                    creatureCircle.position.z = 0; 
+                    creature.run();
+				}
+
+				renderer.render( scene, camera );
+			}
+
+		</script>
+
+	</body>
+</html>
