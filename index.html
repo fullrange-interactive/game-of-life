@@ -62,11 +62,11 @@
                   } 
                   this.move(); 
                   this.checkWorldBounds();
-                  if(_diameterSize > 60) {
+                  if(_diameterSize > 80) {
                     // Kill
                       return "dead";
                   }
-                  if(_i == 1500) {
+                  if(_i == 1000) {
                       this.randomizeMovementVector();
                       this.randomizeMovementDirection();
                     _i= 0;
@@ -102,7 +102,10 @@
 
                 // Randomizes the intensity of the movement vector 
                 this.randomizeMovementVector = function(value) {
-                    _movement.set((Math.random()*4)/10,(Math.random()*4)/10);
+                    
+                    var ratio = _diameterSize / 100;
+                    var ratio = 1.0 - ratio;
+                    _movement.set((((Math.random()*3)/10)+ratio),((Math.random()*4)/10)+ratio);
                     this.movement = _movement; 
                 };
                 
@@ -123,6 +126,35 @@
                   this.worldHeight = h;
                   
                 }
+                // Evaluate the distance between all food item and the creature
+                // check if food item is within the creature's reach 
+                this.closestFoodItem = function(foodItems) {
+                    for(var i = 0 ; i < foodItems.length; i++) {
+                        foodItem = foodItems[i];
+                        distance = _position.distanceTo(foodItem.position);
+                        if(distance - (_diameterSize/2) - (foodItem.foodSize/2) < 1) {
+                            return foodItem;
+                        }
+
+                    }
+                    return null;
+                }
+                // Evaluate the distance between all
+                // check if another creature is withn the creature's reach 
+                this.closestCreature = function(creatures) {
+
+                    for(var i = 0 ; i < creatures.length; i++) {
+                        creature = creatures[i];
+                        distance = _position.distanceTo(creature.position);
+
+                        if(distance - (_diameterSize/2) - (creature.diameterSize/2) < 1 && creature != this) {
+                            if (_diameterSize >= creature.diameterSize) {
+                                return creature;
+                            }
+                        }
+                    }
+                    return null;
+                }
                 // Avoids the creature from going out of bounds 
                 //(like the DVD logo on old-school DVD players) 
                 this.checkWorldBounds = function() {
@@ -137,9 +169,11 @@
                     }
                     if(_position.x <= -halfX) {
                         this.randomizeMovementVector();
+                        _movement.y *= -1;
                     }
                     if(_position.y <= -halfY ) {
                         this.randomizeMovementVector();
+                        _movement.x *= -1;
                     }
                     if(_position.y >= halfY) {
                         this.randomizeMovementVector();
@@ -208,22 +242,7 @@
 
                     // Create initial food circles 
                     for (var i = 0; i < 200; i++) {
-
-
-                        foodItem = new Food();
-                        foodItem.setFoodSize((Math.random()*2)+0.5);
-                        foodItem.setPosition(getRandomIntInclusive(-SCREEN_WIDTH_HALF,SCREEN_WIDTH_HALF),getRandomIntInclusive(-SCREEN_HEIGHT_HALF,SCREEN_HEIGHT_HALF));
-                        foodItem.color = 0xffffff;
-                        
-                        foodItems[i] = foodItem;
-
-                        var foodCircleGeometry = new THREE.CircleGeometry(foodItem.foodSize,8);
-                        var material = new THREE.MeshBasicMaterial( { color: 0xffffff});
-
-                        foodCircle = new THREE.Mesh(foodCircleGeometry,material);
-                        foodCircle.position.set(foodItem.position.x,foodItem.position.y,0); 
-                        foodCircles[i] = foodCircle;
-                        scene.add(foodCircle);
+                        addFood();
                     }     
                 
                 // Set the timer to save the current state to local storage each minute
@@ -255,10 +274,15 @@
             /*
                Creates and adds a creature to the scene
              */
-            function addCreature(params) {
-
-                mouseX = event.clientX - SCREEN_WIDTH_HALF;
-                mouseY = SCREEN_HEIGHT_HALF - event.clientY;
+            function addCreature(x,y,color) {
+                
+                if(event) {
+                    mouseX = event.clientX - SCREEN_WIDTH_HALF;
+                    mouseY = SCREEN_HEIGHT_HALF - event.clientY;
+                } else {
+                    mouseX = x;
+                    mouseY = y;
+                }
                 creature = new Creature();
                 creature.setColor(0x00ff00);
                 creature.setPosition(mouseX,mouseY);
@@ -278,10 +302,29 @@
             /*
                Creates and adds food to the scene
             */
-            function addFood(event) {
+            function addFood(startX,endX,startY,endY) {
 
-                var newFood = new Food();
+                if(!startX) {
+                    startX = -SCREEN_WIDTH_HALF;
+                    endX = SCREEN_WIDTH_HALF;
+                    startY = -SCREEN_HEIGHT_HALF;
+                    endY = SCREEN_HEIGHT_HALF;
+                }
+                            
+                foodItem = new Food();
+                foodItem.setFoodSize((Math.random()*2)+0.5);
+                foodItem.setPosition(getRandomIntInclusive(startX,endX),getRandomIntInclusive(startY,endY));    
+                foodItem.color = 0xffffff;
+                        
+                foodItems[foodItems.length] = foodItem;
 
+                var foodCircleGeometry = new THREE.CircleGeometry(foodItem.foodSize,8);
+                var material = new THREE.MeshBasicMaterial( { color: 0xffffff});
+
+                foodCircle = new THREE.Mesh(foodCircleGeometry,material);
+                foodCircle.position.set(foodItem.position.x,foodItem.position.y,0); 
+                foodCircles[foodCircles.length] = foodCircle;
+                scene.add(foodCircle);
                 return;
             }
 
@@ -369,14 +412,100 @@
 			}
 
 			function render() {
-
+                var creatureToDelete = -1;
+                var deadCreatureFlag = false;
+                var respawnFoodFlag = false;
 				for ( var i = 0, il = creatures.length; i < il; i++ ) {
                     var creature = creatures[i];
                     var creatureCircle = creatureCircles[i];
                     creatureCircle.position.copy(creature.position);
                     creatureCircle.position.z = 0; 
-                    creature.run();
+                    res = creature.run();
+                    if (res == "dead") {
+                        creatureToDelete = i;
+                        //Recreate 3 new small creatures 
+                        deadCreatureFlag = true;
+                        //Remove from scene
+                        scene.remove(creatureCircles[i]);
+                        break;
+                    }
+                    var foodObj = creature.closestFoodItem(foodItems);
+                    var creatureObj = creature.closestCreature(creatures);
+
+                    if(foodObj) {
+                        // Eat the food item 
+                        var index = foodItems.indexOf(foodObj);
+                        if (index > -1) {
+                            foodItems.splice(index,1);
+                            foodCircle = foodCircles[index];
+                            scene.remove(foodCircle);
+                            foodCircles.splice(index,1);
+                            creature.setSize(creature.diameterSize + foodObj.foodSize);
+                            
+                            // Recreate creature mesh 
+                            scene.remove(creatureCircle);
+                            var creatureCircleGeometry = new THREE.CircleGeometry(creature.diameterSize,32);
+                            var material = new THREE.MeshBasicMaterial( { color: creature.color});
+                            creatureCircle = new THREE.Mesh(creatureCircleGeometry,material);
+                            creatureCircles[i] = creatureCircle;
+                            creatureCircle.position.set(creature.position.x,creature.position.y,0); 
+                            scene.add(creatureCircle);
+                            foodObj = false;
+                            respawnFoodFlag = true;
+
+                        }
+                    }
+                    if(creatureObj) {
+                        var index = creatures.indexOf(creatureObj);
+                        if (index > -1) {
+                           // Eat the smaller creature
+                            // Remove the target creature object
+                            creatureToDelete = index;
+                            
+                            // Remove the target creature mesh
+                            targetCreatureCircle = creatureCircles[index];
+                            scene.remove(targetCreatureCircle);
+
+                            
+                            creature.setSize(creature.diameterSize + creatureObj.diameterSize);
+
+                            // Recreate creature mesh 
+                            scene.remove(creatureCircle);
+                            var creatureCircleGeometry = new THREE.CircleGeometry(creature.diameterSize,32);
+                            var material = new THREE.MeshBasicMaterial( { color: creature.color});
+                            creatureCircle = new THREE.Mesh(creatureCircleGeometry,material);
+                            creatureCircles[i] = creatureCircle;
+                            creatureCircle.position.set(creature.position.x,creature.position.y,0); 
+                            scene.add(creatureCircle);
+                            creatureObj = null;
+                        }
+                    }
+                    
 				}
+                var deletedCreature = null;
+                if(creatureToDelete != -1) {
+                    deletedCreature = creatures[creatureToDelete];
+                    creatures.splice(creatureToDelete,1);
+                    creatureCircles.splice(creatureToDelete,1);
+                    creatureToDelete = -1;
+                }
+                if(deadCreatureFlag) {
+                    // Respawn 3 new creatures from the big one 
+                    var x = deletedCreature.position.x, y = deletedCreature.position.y;
+                    for(var ii = 0; ii < 3; ii++) {
+                        addCreature(x-(Math.random()*80),y-(Math.random()*80),deletedCreature.color);
+                    }
+                    for(var ii = 0; ii < 5; ii++) {
+                        // Respawn some food 
+                        addFood(x-100,x+100,y-100,y+100);
+                        deletedCreature = null;
+                    }
+                }
+                if(respawnFoodFlag) {
+                    addFood();
+                    respawnFoodFlag = false;
+                }
+
 
 				renderer.render( scene, camera );
 			}
