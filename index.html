@@ -43,11 +43,15 @@
 		<div id="container"></div>
 		<script src="lib/three.js/build/three.js"></script>
 
+        <!-- Web socket connection library -->
+        <script src="lib/websocketConnection.js"></script>
+
         <!-- ThreeJS Libs -->
 		<script src="lib/three.js/Projector.js"></script>
 		<script src="lib/three.js/CanvasRenderer.js"></script>
 		<script src="lib/three.js/stats.min.js"></script>
         <script src="lib/random.js"></script>
+
 		<script>
             // The creature
             var Creature = function() {
@@ -164,21 +168,54 @@
                     halfY = _worldHeight / 2;
 
                     if(_position.x >= halfX) {
-                        // Invert movement - go away from wall
-                        this.randomizeMovementVector();
-                        _movement.x *= -1;
+                        // The creature touched right wall
+                        if(_movement.x > 0 && _movement.y < 0) {
+
+                            this.randomizeMovementVector();
+                            _movement.x *= -1;
+                            _movement.y *= -1;
+                        
+                        } else if (_movement.x >= 0 && _movement.y >= 0) {
+                        
+                            this.randomizeMovementVector();
+                            _movement.x *= -1;
+                        }
                     }
                     if(_position.x <= -halfX) {
-                        this.randomizeMovementVector();
-                        _movement.y *= -1;
+                        // The creature touched the left wall 
+                        if(_movement.x < 0 && _movement.y < 0) {
+                            this.randomizeMovementVector();
+                            _movement.y *= -1;
+                        } else if (_movement.x <= 0 && _movement.y >= 0) {
+                            this.randomizeMovementVector();
+                        }
                     }
                     if(_position.y <= -halfY ) {
-                        this.randomizeMovementVector();
-                        _movement.x *= -1;
+                        // The creature touched the lower limit 
+                        if(_movement.x > 0 && _movement.y < 0) {
+
+                            this.randomizeMovementVector();
+                        
+                        } else if (_movement.x <= 0 && _movement.y <= 0) {
+                            this.randomizeMovementVector();
+                            _movement.x *= -1;
+                        }
+                        
                     }
                     if(_position.y >= halfY) {
-                        this.randomizeMovementVector();
-                        _movement.y *= -1;
+                        // The creature touched the upper limit
+                        if(_movement.x < 0 && _movement.y > 0) {
+
+                            this.randomizeMovementVector();
+                            _movement.y *= -1;
+                            _movement.x *= -1;
+
+                        } else if(_movement.x >= 0 && _movement.y >= 0) {
+
+                            this.randomizeMovementVector();
+                            _movement.y *= -1;
+                        }
+                    
                     }
                     this.movement = _movement;
 
@@ -219,6 +256,21 @@
 			var creatureCircles, creatureCircle;
             var foodCircles, foodCircle;
 
+            // Open persistent web socket connection to the server
+            var connection = new WebsocketConnection(
+              'jebediah.pimp-my-wall.ch',
+              8000,
+              {
+                open: onOpen,
+                close: function () {},
+                message: onMessage
+              }, {
+                autoConnect: true,
+                autoReconnect: true
+              }
+            );
+
+
 			var stats;
 			init();
 			animate();
@@ -253,7 +305,7 @@
 
                 
 				renderer = new THREE.CanvasRenderer();
-				renderer.setClearColor( 0x000000,0 );
+				renderer.setClearColor( 0x000000,0x1 );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
 
@@ -510,6 +562,55 @@
 
 				renderer.render( scene, camera );
 			}
+
+            ///////////////////////// NETWORK HANDLING /////////////////////////
+
+            /*
+                Called when the connection is first opened, simply return the app 
+                name to the server 
+            */
+            function onOpen(connection) {
+                  console.log("Connection with server opened");
+
+                  connection.sendMessage({
+                    type: 'hello',
+                    data: {
+                      game: 'game-of-life'
+                    }
+                  });
+            }
+            // When you receive something (including pings), this function will be called
+            // with the parsed JSON message all ready for you in parsedMessage.
+            function onMessage(connection, parsedMessage) {
+            
+              switch (parsedMessage.Type) {
+                case 'hello':
+                   //In this project it's not required to do anything on hello
+                  console.log("Server said hello.");
+                  console.log(parsedMessage.data.state);
+                  break;
+                case 'state':
+                  // You will get this if you make a requestState command
+                  console.log("Got state");
+                  console.log(parsedMessage.data.state);
+ 
+                case 'addCreature':
+                    // The handler to add a creature 
+                    x = parseFloat(parsedMessage.data.xCoord);
+                    y = parseFloat(parsedMessage.data.yCoord);
+                    color = parseInt(parsedMessage.data.creatureColor);
+                    addCreature(null,x,y,color);
+                    console.log("Add creature");
+
+                   break;
+                default:
+                  // Pings and other garbage you don't care about
+                  console.log("Got a message from the server");
+                  console.log(parsedMessage);
+              }
+            }
+
+        </script>
 
 		</script>
 
