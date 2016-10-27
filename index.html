@@ -17,7 +17,8 @@
 				overflow: hidden;
 			}
             canvas {width:100%; height: 100%;background-color: black;}
-			body:after
+            /*  
+            body:after
 			{
 				content: '';
 				position: absolute;
@@ -30,7 +31,7 @@
 				background-position: 0% 0%;
 				background-repeat: no-repeat;
 			}
-
+            */
 			#info {
 				position: absolute;
 				top: 0px; width: 100%;
@@ -56,11 +57,13 @@
 
             /////////////////////// Constants //////////////////////
             var LIMIT_DIAMETER = 80.0;                   // The diameter at witch the creatures explodes
-            var CREATURE_RESPAWN_COUNT = 3;              // How many creatures are respawned when a large dies
-            var RESPAWN_FOOD_ON_CREATURE_DEATH = false;  // Be carefull can end up heavy on gpu in a very long term 
+            var CREATURE_RESPAWN_COUNT = 5;              // How many creatures are respawned when a large dies
+            var RESPAWN_FOOD_ON_CREATURE_DEATH = false;  // Be carefull can end up heavy on gpu (in a very long term) 
             var CREATURE_FOOD_RESPAWN_COUNT = 3;         // Applied if above flag is set
             var FOOD_ITEM_COLOR = 0xffffff;              // Food is white by default. gives it a classic space invader feel
             var STATS_METER_ON = false;                  // Should the stats meter be displayed ?
+            var RANDOMIZE_INTESITY_AND_DIRECTION = 1000; // How often should the creature randomize the behaviour (default 1000 cycles)
+            var DEBUG_GPU_FRAMES = false;                // Show frames per second
 
             /////////////////////// The creature ///////////////////
             var Creature = function() {
@@ -80,7 +83,7 @@
                     // Kill
                       return "dead";
                   }
-                  if(_i == 1000) {
+                  if(_i == RANDOMIZE_INTESITY_AND_DIRECTION) {
                       this.randomizeMovementVector();
                       this.randomizeMovementDirection();
                     _i= 0;
@@ -322,8 +325,9 @@
 
                 // Comment the next 2 lines in a production enviroment
 				stats = new Stats();
-				document.getElementById( 'container' ).appendChild(stats.dom);
-				
+				if(DEBUG_GPU_FRAMES) {
+                    document.getElementById( 'container' ).appendChild(stats.dom);
+				}
 
 			}
 
@@ -399,6 +403,11 @@
                 SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
                 SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
+                // Reset world height on every creature
+                for(var i = 0; i < creatures.length; i++) {
+                    creatures[i].setWorldSize(SCREEN_WIDTH,SCREEN_HEIGHT);
+                }
+
 			}
 
 			function animate() {
@@ -409,18 +418,22 @@
 				stats.end();
 
 			}
+
             //////////////////// Rendering + logic //////////////////////////  
 			function render() {
+                
                 var creatureToDelete = -1;
                 var deadCreatureFlag = false;
                 var respawnFoodFlag = false;
 
 				for ( var i = 0, il = creatures.length; i < il; i++ ) {
+                    
                     var creature = creatures[i];
                     var creatureCircle = creatureCircles[i];
                     creatureCircle.position.copy(creature.position);
                     creatureCircle.position.z = 0; 
                     res = creature.run();
+                    
                     if (res == "dead") {
                         creatureToDelete = i;
                         //Recreate 3 new small creatures 
@@ -429,6 +442,7 @@
                         scene.remove(creatureCircles[i]);
                         break;
                     }
+
                     var foodObj = creature.closestFoodItem(foodItems);
                     var creatureObj = creature.closestCreature(creatures);
 
@@ -458,7 +472,7 @@
                     if(creatureObj) {
                         var index = creatures.indexOf(creatureObj);
                         if (index > -1) {
-                           // Eat the smaller creature
+                            // Eat the smaller creature
                             // Remove the target creature object
                             creatureToDelete = index;
                             
@@ -466,7 +480,7 @@
                             targetCreatureCircle = creatureCircles[index];
                             scene.remove(targetCreatureCircle);
 
-                            
+                            // Creature becomes bigger
                             creature.setSize(creature.diameterSize + creatureObj.diameterSize);
 
                             // Recreate creature mesh 
@@ -478,6 +492,8 @@
                             creatureCircle.position.set(creature.position.x,creature.position.y,0); 
                             scene.add(creatureCircle);
                             creatureObj = null;
+                            // Exit the for loop to avoid problems (iteration off deleted creatures)
+                            break;
                         }
                     }
                     
@@ -510,12 +526,10 @@
                     respawnFoodFlag = false;
                 }
 
-
 				renderer.render( scene, camera );
 			}
 
             ///////////////////////// NETWORK HANDLING /////////////////////////
-
             /*
                 Called when the connection is first opened, simply return the app 
                 name to the server 
