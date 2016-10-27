@@ -53,7 +53,16 @@
         <script src="lib/random.js"></script>
 
 		<script>
-            // The creature
+
+            /////////////////////// Constants //////////////////////
+            var LIMIT_DIAMETER = 80.0;                   // The diameter at witch the creatures explodes
+            var CREATURE_RESPAWN_COUNT = 3;              // How many creatures are respawned when a large dies
+            var RESPAWN_FOOD_ON_CREATURE_DEATH = false;  // Be carefull can end up heavy on gpu in a very long term 
+            var CREATURE_FOOD_RESPAWN_COUNT = 3;         // Applied if above flag is set
+            var FOOD_ITEM_COLOR = 0xffffff;              // Food is white by default. gives it a classic space invader feel
+            var STATS_METER_ON = false;                  // Should the stats meter be displayed ?
+
+            /////////////////////// The creature ///////////////////
             var Creature = function() {
 
                var _diameterSize, _position = new THREE.Vector2(), _movement = new THREE.Vector2();
@@ -67,7 +76,7 @@
                   } 
                   this.move(); 
                   this.checkWorldBounds();
-                  if(_diameterSize > 80) {
+                  if(_diameterSize > LIMIT_DIAMETER) {
                     // Kill
                       return "dead";
                   }
@@ -220,11 +229,10 @@
                     this.movement = _movement;
 
                 }
-                
-                
 
             }
-            // The food item 
+
+            ///////////////////// The food item ////////////////////
             var Food = function() {
 
                 var _position = new THREE.Vector2(), _color = 0xffffff, _foodSize;
@@ -249,11 +257,14 @@
 			SCREEN_WIDTH_HALF = SCREEN_WIDTH  / 2,
 			SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
 
+            // ThreeJS camera and scene    
 			var camera, scene, renderer;
             
+            // The Food and Creature instances 
 			var creatures, creature, foodItems,foodItem;
 
-			var creatureCircles, creatureCircle;
+			// ThreeJS circle objects
+            var creatureCircles, creatureCircle;
             var foodCircles, foodCircle;
 
             // Open persistent web socket connection to the server
@@ -270,57 +281,49 @@
               }
             );
 
-
 			var stats;
 			init();
 			animate();
 
 
-        		function init() {
+        	function init() {
                     
-                    // Objects 
-                    creatures = [];
-                    foodItems = [];
+                // Objects 
+                creatures = [];
+                foodItems = [];
 
-                    // Graphics 
-                    creatureCircles = [];
-                    foodCircles = [];
+                // Graphics 
+                creatureCircles = [];
+                foodCircles = [];
 
-				    // Init camera and scene
-				    camera = new THREE.OrthographicCamera( SCREEN_WIDTH /-2,SCREEN_WIDTH /2,  SCREEN_HEIGHT /2 , SCREEN_HEIGHT/ -2, 1, 1e6 );
-				    camera.position.set(0,0,500);
+			    // Init camera and scene
+			    camera = new THREE.OrthographicCamera( SCREEN_WIDTH /-2,SCREEN_WIDTH /2,  SCREEN_HEIGHT /2 , SCREEN_HEIGHT/ -2, 1, 1e6 );
+			    camera.position.set(0,0,500);
 
-				    scene = new THREE.Scene();
-                    scene.add(camera);
+			    scene = new THREE.Scene();
+                scene.add(camera);
 
-                    // Create initial food circles 
-                    for (var i = 0; i < 200; i++) {
-                        addFood();
-                    }     
-                
-                // Set the timer to save the current state to local storage each minute
-				window.setTimeout(saveCurrentStateToLocalStorage,(1000*60)*1);
+                // Create initial food circles 
+                for (var i = 0; i < 200; i++) {
+                    addFood();
+                }     
                 
                 creature = new Creature();
 
-                
-				renderer = new THREE.CanvasRenderer();
+				renderer = new THREE.WebGLRenderer();
 				renderer.setClearColor( 0x000000,0x1 );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
 
-				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
                 document.addEventListener( 'mouseup', addCreature, false);
+                window.addEventListener( 'resize', onWindowResize, false );
 
 				document.body.appendChild( renderer.domElement );
 
+                // Comment the next 2 lines in a production enviroment
 				stats = new Stats();
 				document.getElementById( 'container' ).appendChild(stats.dom);
-
-				//
-
-
-				window.addEventListener( 'resize', onWindowResize, false );
+				
 
 			}
 
@@ -332,7 +335,7 @@
                 if(event) {
                     mouseX = event.clientX - SCREEN_WIDTH_HALF;
                     mouseY = SCREEN_HEIGHT_HALF - event.clientY;
-                    color = 0x00ff000;
+                    color = 0x00ff00;
                 } else {
                     mouseX = x;
                     mouseY = y;
@@ -355,6 +358,7 @@
 
             /*
                Creates and adds food to the scene
+               if startX is not passed, then the food is place randomly on the screen
             */
             function addFood(startX,endX,startY,endY) {
 
@@ -368,7 +372,7 @@
                 foodItem = new Food();
                 foodItem.setFoodSize((Math.random()*2)+0.5);
                 foodItem.setPosition(getRandomIntInclusive(startX,endX),getRandomIntInclusive(startY,endY));    
-                foodItem.color = 0xffffff;
+                foodItem.color = FOOD_ITEM_COLOR;
                         
                 foodItems[foodItems.length] = foodItem;
 
@@ -380,57 +384,6 @@
                 foodCircles[foodCircles.length] = foodCircle;
                 scene.add(foodCircle);
                 return;
-            }
-
-            /*
-              Saves the current state of to local storage, each boid and bird. 
-            */
-            function saveCurrentStateToLocalStorage() {
-                
-                var localStorage = window.localStorage;
-                // Test if local storage exists
-                if(!testLocalStorage) {
-                    throw "Cannot run without local storage support...";
-                }
-                //var boids = JSON.stringify(this.boids);
-                //localStorage.setItem("elements",elements);
-
-                // reset the timer to save the current state to local storage each minute
-                window.setTimeout(saveCurrentStateToLocalStorage,(1000*60)*1);
-            }
-            function testLocalStorage() {
-            
-                try {
-                    var storage = window.localStorage, x='__storage_test__';
-                    storage.setItem(x,x);
-                    storage.removeItem(x);
-                    return true;
-                }
-                catch(e) {
-                    return false;                
-                }
-            }
-
-            /*
-              Restores state saved prior 
-            */
-            function restoreStateFromLocalStorage() {
-                
-                var localStorage = window.localStorage;
-
-                if(!testLocalStorage) {
-                    throw "Cannot run without local storage support...";
-                }
-
-                var elements = localStorage.getItem("elements")
-                if (!elements) {
-                    return false;
-                }
-
-                // Recreate boid objects 
-                //boids = JSON.parse(boids);
-                //return boids;
-
             }
 
 			function onWindowResize() {
@@ -448,23 +401,15 @@
 
 			}
 
-			function onDocumentMouseMove( event ) {
-                return;
-
-			}
-            
-			//
-
 			function animate() {
 
 				requestAnimationFrame( animate );
-
 				stats.begin();
 				render();
 				stats.end();
 
 			}
-
+            //////////////////// Rendering + logic //////////////////////////  
 			function render() {
                 var creatureToDelete = -1;
                 var deadCreatureFlag = false;
@@ -547,16 +492,18 @@
                 if(deadCreatureFlag) {
                     // Respawn 3 new creatures from the big one 
                     var x = deletedCreature.position.x, y = deletedCreature.position.y;
-                    for(var ii = 0; ii < 3; ii++) {
+                    for(var ii = 0; ii < CREATURE_RESPAWN_COUNT; ii++) {
                         addCreature(null,x-(Math.random()*80),y-(Math.random()*80),deletedCreature.color);
                     }
-                    // Respawn 3 food items -- Bad idea too much for gpu
-                    /*for(var ii = 0; ii < 3; ii++) {
-                        // Respawn some food 
-                        addFood(x-100,x+100,y-100,y+100);
-                        deletedCreature = null;
+                    // Respawn 3 food items -- Bad idea too much for gpu 
+                    if (RESPAWN_FOOD_ON_CREATURE_DEATH) {
+                        for(var ii = 0; ii < CREATURE_FOOD_RESPAWN_COUNT; ii++) {
+                            // Respawn some food 
+                            addFood(x-100,x+100,y-100,y+100);
+                            deletedCreature = null;
+                        }
                     }
-                    */
+                    
                 }
                 if(respawnFoodFlag) {
                     addFood();
