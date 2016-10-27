@@ -329,15 +329,16 @@
              */
             function addCreature(event,x,y,color) {
                 
-                if(!x) {
+                if(event) {
                     mouseX = event.clientX - SCREEN_WIDTH_HALF;
                     mouseY = SCREEN_HEIGHT_HALF - event.clientY;
+                    color = 0x00ff000;
                 } else {
                     mouseX = x;
                     mouseY = y;
                 }
                 creature = new Creature();
-                creature.setColor(0x00ff00);
+                creature.setColor(color);
                 creature.setPosition(mouseX,mouseY);
                 creature.setSize(5);
                 creature.setWorldSize(SCREEN_WIDTH,SCREEN_HEIGHT);
@@ -468,6 +469,7 @@
                 var creatureToDelete = -1;
                 var deadCreatureFlag = false;
                 var respawnFoodFlag = false;
+
 				for ( var i = 0, il = creatures.length; i < il; i++ ) {
                     var creature = creatures[i];
                     var creatureCircle = creatureCircles[i];
@@ -546,13 +548,15 @@
                     // Respawn 3 new creatures from the big one 
                     var x = deletedCreature.position.x, y = deletedCreature.position.y;
                     for(var ii = 0; ii < 3; ii++) {
-                        addCreature(x-(Math.random()*80),y-(Math.random()*80),deletedCreature.color);
+                        addCreature(null,x-(Math.random()*80),y-(Math.random()*80),deletedCreature.color);
                     }
-                    for(var ii = 0; ii < 5; ii++) {
+                    // Respawn 3 food items -- Bad idea too much for gpu
+                    /*for(var ii = 0; ii < 3; ii++) {
                         // Respawn some food 
                         addFood(x-100,x+100,y-100,y+100);
                         deletedCreature = null;
                     }
+                    */
                 }
                 if(respawnFoodFlag) {
                     addFood();
@@ -582,32 +586,16 @@
             // When you receive something (including pings), this function will be called
             // with the parsed JSON message all ready for you in parsedMessage.
             function onMessage(connection, parsedMessage) {
-            
-              switch (parsedMessage.Type) {
-                case 'hello':
-                   //In this project it's not required to do anything on hello
-                  console.log("Server said hello.");
-                  console.log(parsedMessage.data.state);
-                  break;
-                case 'state':
-                  // You will get this if you make a requestState command
-                  console.log("Got state");
-                  console.log(parsedMessage.data.state);
- 
-                case 'addCreature':
+                
+                if(parsedMessage.type == "addCreature") {
                     // The handler to add a creature 
-                    x = parseFloat(parsedMessage.data.xCoord);
-                    y = parseFloat(parsedMessage.data.yCoord);
-                    color = parseInt(parsedMessage.data.creatureColor);
+                    x = parseFloat(parsedMessage.data.x);
+                    y = parseFloat(parsedMessage.data.y);
+                    color = parseInt(parsedMessage.data.color);
                     addCreature(null,x,y,color);
                     console.log("Add creature");
 
-                   break;
-                default:
-                  // Pings and other garbage you don't care about
-                  console.log("Got a message from the server");
-                  console.log(parsedMessage);
-              }
+                }
             }
 
         </script>
