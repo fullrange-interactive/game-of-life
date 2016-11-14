@@ -125,7 +125,6 @@
         if (this.scale <= 0) {
           this.scale = 0;
           this.dead = true;
-          console.log('dead')
         }
         return "dead";
       }
@@ -158,7 +157,6 @@
     this.die = function() {
       _targetScale = 0;
       _dying = true;
-      console.log('die');
     }
 
     this.setColor = function(value) {
@@ -537,7 +535,6 @@
       }
 
       if (res == "dead") {
-        console.log('calling die');
         creature.die();
       }
 
@@ -685,7 +682,6 @@
     if (Date.now() - lastAdd > ADD_IDLE_TIME 
       && creatures.length < ADD_MAX_CREATURES
       && Math.random() < ADD_PROBABILITY) {
-      console.log("Eh")
       var color = new THREE.Color('hsl(' + Math.floor(Math.random() * 360) + ',100%,60%)');
       addCreature(
         null, 
@@ -694,7 +690,7 @@
         color.getHex()
       );
     }
-  }, ADD_INTERVAL)
+  }, ADD_INTERVAL);
   </script>
 </body>
 
