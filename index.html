@@ -1,567 +1,701 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<style>
-			body {
-				color: #000000;
-                min-height:100%;
-                min-width:100%;
-				font-family:Monospace;
-				font-size:13px;
-				text-align:center;
-
-				background-color: #000000;
-				margin: 0px;
-				overflow: hidden;
-			}
-            canvas {width:100%; height: 100%;background-color: black;}
-            /*  
-            body:after
-			{
-				content: '';
-				position: absolute;
-				left: 0;
-				top: 0;
-				bottom: 0;
-				right: 0;
-				background-image: url(mask-v2.png);
-				background-size: contain;
-				background-position: 0% 0%;
-				background-repeat: no-repeat;
-			}
-            */
-			#info {
-				position: absolute;
-				top: 0px; width: 100%;
-				padding: 5px;
-			}
-		</style>
-	</head>
-	<body>
-
-		<div id="container"></div>
-        <script src="file:///home/pmw/repos/scheduler/jquery-3.1.1.min.js"></script>
-        <script src="file:///home/pmw/repos/scheduler/scheduler.js"></script>
-        
-		<script src="lib/three.js/build/three.js"></script>
-
-        <!-- Web socket connection library -->
-        <script src="lib/websocketConnection.js"></script>
-
-        <!-- ThreeJS Libs -->
-		<script src="lib/three.js/Projector.js"></script>
-		<script src="lib/three.js/CanvasRenderer.js"></script>
-		<script src="lib/three.js/stats.min.js"></script>
-        <script src="lib/random.js"></script>
-
-		<script>
-
-            /////////////////////// Constants //////////////////////
-            var LIMIT_DIAMETER = 80.0;                   // The diameter at witch the creatures explodes
-            var CREATURE_RESPAWN_COUNT = 5;              // How many creatures are respawned when a large dies
-            var RESPAWN_FOOD_ON_CREATURE_DEATH = false;  // Be carefull can end up heavy on gpu (in a very long term) 
-            var CREATURE_FOOD_RESPAWN_COUNT = 3;         // Applied if above flag is set
-            var FOOD_ITEM_COLOR = 0xffffff;              // Food is white by default. gives it a classic space invader feel
-            var STATS_METER_ON = false;                  // Should the stats meter be displayed ?
-            var RANDOMIZE_INTESITY_AND_DIRECTION = 1000; // How often should the creature randomize the behaviour (default 1000 cycles)
-            var DEBUG_GPU_FRAMES = false;                // Show frames per second
-
-            /////////////////////// The creature ///////////////////
-            var Creature = function() {
-
-               var _diameterSize, _position = new THREE.Vector2(), _movement = new THREE.Vector2();
-               var _worldWidth,_worldHeight;
-               var _i = 0;
-
-               this.run = function() {
-                  if(_movement.x == 0 && _movement.y == 0) {
-                     this.randomizeMovementVector();
-                     this.randomizeMovementDirection();
-                  } 
-                  this.move(); 
-                  this.checkWorldBounds();
-                  if(_diameterSize > LIMIT_DIAMETER) {
-                    // Kill
-                      return "dead";
-                  }
-                  if(_i == RANDOMIZE_INTESITY_AND_DIRECTION) {
-                      this.randomizeMovementVector();
-                      this.randomizeMovementDirection();
-                    _i= 0;
-                  }
-                  _i++;
-                        
-               };
-               this.move = function() {
-                   _position.add(_movement);
-                   this.position = _position;
-               }
-            
-                this.setColor = function(value) {
-                    _color = value;
-                    this.color = value;
-                };
-
-                this.setPosition = function(x,y) {
-                    _position.x = x;
-                    _position.y = y;
-                    this.position = _position;
-                };
-                
-                this.setSize = function(value) {
-                    _diameterSize = value;
-                    this.diameterSize = value;
-                };
-                
-                this.setMovementVector = function(x,y) {
-                    _movement.set(x,y);
-                    this.movement = _movement;
-                } 
-
-                // Randomizes the intensity of the movement vector 
-                this.randomizeMovementVector = function(value) {
-                    
-                    var ratio = _diameterSize / 100;
-                    var ratio = 1.0 - ratio;
-                    _movement.set((((Math.random()*3)/10)+ratio),((Math.random()*4)/10)+ratio);
-                    this.movement = _movement; 
-                };
-                
-                this.randomizeMovementDirection = function() {
-                    if(Math.random() > 0.5) {
-                        _movement.x *= -1;
-                    } 
-                    if(Math.random() > 0.5) {
-                        _movement.y *= -1;
-                    }
-                    this.movement = _movement;
-                }
-                /* Set the world size */
-                this.setWorldSize = function(w,h) {
-                   _worldWidth = w;
-                   _worldHeight = h;
-                  this.worldWidth = w;
-                  this.worldHeight = h;
-                  
-                }
-                // Evaluate the distance between all food item and the creature
-                // check if food item is within the creature's reach 
-                this.closestFoodItem = function(foodItems) {
-                    for(var i = 0 ; i < foodItems.length; i++) {
-                        foodItem = foodItems[i];
-                        distance = _position.distanceTo(foodItem.position);
-                        if(distance - (_diameterSize/2) - (foodItem.foodSize/2) < 1) {
-                            return foodItem;
-                        }
-
-                    }
-                    return null;
-                }
-                // Evaluate the distance between all
-                // check if another creature is withn the creature's reach 
-                this.closestCreature = function(creatures) {
-
-                    for(var i = 0 ; i < creatures.length; i++) {
-                        creature = creatures[i];
-                        distance = _position.distanceTo(creature.position);
-
-                        if(distance - (_diameterSize/2) - (creature.diameterSize/2) < 1 && creature != this) {
-                            if (_diameterSize >= creature.diameterSize) {
-                                return creature;
-                            }
-                        }
-                    }
-                    return null;
-                }
-                // Avoids the creature from going out of bounds 
-                //(like the DVD logo on old-school DVD players) 
-                this.checkWorldBounds = function() {
-                    
-                    halfX = _worldWidth / 2;
-                    halfY = _worldHeight / 2;
-
-                    if(_position.x >= halfX) {
-                        // The creature touched right wall
-                        if(_movement.x > 0 && _movement.y < 0) {
-
-                            this.randomizeMovementVector();
-                            _movement.x *= -1;
-                            _movement.y *= -1;
-                        
-                        } else if (_movement.x >= 0 && _movement.y >= 0) {
-                        
-                            this.randomizeMovementVector();
-                            _movement.x *= -1;
-                        }
-                    }
-                    if(_position.x <= -halfX) {
-                        // The creature touched the left wall 
-                        if(_movement.x < 0 && _movement.y < 0) {
-                            this.randomizeMovementVector();
-                            _movement.y *= -1;
-                        } else if (_movement.x <= 0 && _movement.y >= 0) {
-                            this.randomizeMovementVector();
-                        }
-                    }
-                    if(_position.y <= -halfY ) {
-                        // The creature touched the lower limit 
-                        if(_movement.x > 0 && _movement.y < 0) {
-
-                            this.randomizeMovementVector();
-                        
-                        } else if (_movement.x <= 0 && _movement.y <= 0) {
-                            this.randomizeMovementVector();
-                            _movement.x *= -1;
-                        }
-                        
-                    }
-                    if(_position.y >= halfY) {
-                        // The creature touched the upper limit
-                        if(_movement.x < 0 && _movement.y > 0) {
-
-                            this.randomizeMovementVector();
-                            _movement.y *= -1;
-                            _movement.x *= -1;
-
-                        } else if(_movement.x >= 0 && _movement.y >= 0) {
-
-                            this.randomizeMovementVector();
-                            _movement.y *= -1;
-                        }
-                    
-                    }
-                    this.movement = _movement;
-
-                }
-
-            }
-
-            ///////////////////// The food item ////////////////////
-            var Food = function() {
-
-                var _position = new THREE.Vector2(), _color = 0xffffff, _foodSize;
-                this.setColor = function(value) {
-                    _color = value;
-                    this.color = value;
-                };
-                this.setPosition = function(x,y) {
-                    _position.x = x;
-                    _position.y = y;
-                    this.position = _position;
-                };
-                this.setFoodSize = function(value) {
-                    _foodSize = value;
-                    this.foodSize = value;
-                };
-            }
-
-            
-			var SCREEN_WIDTH = window.innerWidth,
-			SCREEN_HEIGHT = window.innerHeight,
-			SCREEN_WIDTH_HALF = SCREEN_WIDTH  / 2,
-			SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
-
-            // ThreeJS camera and scene    
-			var camera, scene, renderer;
-            
-            // The Food and Creature instances 
-			var creatures, creature, foodItems,foodItem;
-
-			// ThreeJS circle objects
-            var creatureCircles, creatureCircle;
-            var foodCircles, foodCircle;
-
-            // Open persistent web socket connection to the server
-            var connection = new WebsocketConnection(
-              'jebediah.pimp-my-wall.ch',
-              8000,
-              {
-                open: onOpen,
-                close: function () {},
-                message: onMessage
-              }, {
-                autoConnect: true,
-                autoReconnect: true
-              }
-            );
-
-			var stats;
-			init();
-			animate();
-
-
-        	function init() {
-                    
-                // Objects 
-                creatures = [];
-                foodItems = [];
-
-                // Graphics 
-                creatureCircles = [];
-                foodCircles = [];
-
-			    // Init camera and scene
-			    camera = new THREE.OrthographicCamera( SCREEN_WIDTH /-2,SCREEN_WIDTH /2,  SCREEN_HEIGHT /2 , SCREEN_HEIGHT/ -2, 1, 1e6 );
-			    camera.position.set(0,0,500);
-
-			    scene = new THREE.Scene();
-                scene.add(camera);
-
-                // Create initial food circles 
-                for (var i = 0; i < 200; i++) {
-                    addFood();
-                }     
-                
-                creature = new Creature();
-
-				renderer = new THREE.WebGLRenderer();
-				renderer.setClearColor( 0x000000,0x1 );
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
-
-                document.addEventListener( 'mouseup', addCreature, false);
-                window.addEventListener( 'resize', onWindowResize, false );
-
-				document.body.appendChild( renderer.domElement );
-
-                // Comment the next 2 lines in a production enviroment
-				stats = new Stats();
-				if(DEBUG_GPU_FRAMES) {
-                    document.getElementById( 'container' ).appendChild(stats.dom);
-				}
-
-			}
-
-            /*
-               Creates and adds a creature to the scene
-             */
-            function addCreature(event,x,y,color) {
-                
-                if(event) {
-                    mouseX = event.clientX - SCREEN_WIDTH_HALF;
-                    mouseY = SCREEN_HEIGHT_HALF - event.clientY;
-                    color = 0x00ff00;
-                } else {
-                    mouseX = x;
-                    mouseY = y;
-                }
-                creature = new Creature();
-                creature.setColor(color);
-                creature.setPosition(mouseX,mouseY);
-                creature.setSize(5);
-                creature.setWorldSize(SCREEN_WIDTH,SCREEN_HEIGHT);
-                var creatureCircleGeometry = new THREE.CircleGeometry(creature.diameterSize,32);
-                var material = new THREE.MeshBasicMaterial( { color: creature.color});
-                creatureCircle = new THREE.Mesh(creatureCircleGeometry,material);
-                creatureCircle.position.set(creature.position.x,creature.position.y,0); 
-
-                
-                creatures[creatures.length] = creature;
-                creatureCircles[creatureCircles.length] = creatureCircle;
-                scene.add(creatureCircle);
-            }    
-
-            /*
-               Creates and adds food to the scene
-               if startX is not passed, then the food is place randomly on the screen
-            */
-            function addFood(startX,endX,startY,endY) {
-
-                if(!startX) {
-                    startX = -SCREEN_WIDTH_HALF;
-                    endX = SCREEN_WIDTH_HALF;
-                    startY = -SCREEN_HEIGHT_HALF;
-                    endY = SCREEN_HEIGHT_HALF;
-                }
-                            
-                foodItem = new Food();
-                foodItem.setFoodSize((Math.random()*2)+0.5);
-                foodItem.setPosition(getRandomIntInclusive(startX,endX),getRandomIntInclusive(startY,endY));    
-                foodItem.color = FOOD_ITEM_COLOR;
-                        
-                foodItems[foodItems.length] = foodItem;
-
-                var foodCircleGeometry = new THREE.CircleGeometry(foodItem.foodSize,8);
-                var material = new THREE.MeshBasicMaterial( { color: 0xffffff});
-
-                foodCircle = new THREE.Mesh(foodCircleGeometry,material);
-                foodCircle.position.set(foodItem.position.x,foodItem.position.y,0); 
-                foodCircles[foodCircles.length] = foodCircle;
-                scene.add(foodCircle);
-                return;
-            }
-
-			function onWindowResize() {
-
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-
-				renderer.setSize( window.innerWidth, window.innerHeight );
-                
-                // Update world size 
-                SCREEN_WIDTH = window.innerWidth;
-                SCREEN_HEIGHT = window.innerHeight;
-                SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
-                SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
-
-                // Reset world height on every creature
-                for(var i = 0; i < creatures.length; i++) {
-                    creatures[i].setWorldSize(SCREEN_WIDTH,SCREEN_HEIGHT);
-                }
-
-			}
-
-			function animate() {
-
-				requestAnimationFrame( animate );
-				stats.begin();
-				render();
-				stats.end();
-
-			}
-
-            //////////////////// Rendering + logic //////////////////////////  
-			function render() {
-                
-                var creatureToDelete = -1;
-                var deadCreatureFlag = false;
-                var respawnFoodFlag = false;
-
-				for ( var i = 0, il = creatures.length; i < il; i++ ) {
-                    
-                    var creature = creatures[i];
-                    var creatureCircle = creatureCircles[i];
-                    creatureCircle.position.copy(creature.position);
-                    creatureCircle.position.z = 0; 
-                    res = creature.run();
-                    
-                    if (res == "dead") {
-                        creatureToDelete = i;
-                        //Recreate 3 new small creatures 
-                        deadCreatureFlag = true;
-                        //Remove from scene
-                        scene.remove(creatureCircles[i]);
-                        break;
-                    }
-
-                    var foodObj = creature.closestFoodItem(foodItems);
-                    var creatureObj = creature.closestCreature(creatures);
-
-                    if(foodObj) {
-                        // Eat the food item 
-                        var index = foodItems.indexOf(foodObj);
-                        if (index > -1) {
-                            foodItems.splice(index,1);
-                            foodCircle = foodCircles[index];
-                            scene.remove(foodCircle);
-                            foodCircles.splice(index,1);
-                            creature.setSize(creature.diameterSize + foodObj.foodSize);
-                            
-                            // Recreate creature mesh 
-                            scene.remove(creatureCircle);
-                            var creatureCircleGeometry = new THREE.CircleGeometry(creature.diameterSize,32);
-                            var material = new THREE.MeshBasicMaterial( { color: creature.color});
-                            creatureCircle = new THREE.Mesh(creatureCircleGeometry,material);
-                            creatureCircles[i] = creatureCircle;
-                            creatureCircle.position.set(creature.position.x,creature.position.y,0); 
-                            scene.add(creatureCircle);
-                            foodObj = false;
-                            respawnFoodFlag = true;
-
-                        }
-                    }
-                    if(creatureObj) {
-                        var index = creatures.indexOf(creatureObj);
-                        if (index > -1) {
-                            // Eat the smaller creature
-                            // Remove the target creature object
-                            creatureToDelete = index;
-                            
-                            // Remove the target creature mesh
-                            targetCreatureCircle = creatureCircles[index];
-                            scene.remove(targetCreatureCircle);
-
-                            // Creature becomes bigger
-                            creature.setSize(creature.diameterSize + creatureObj.diameterSize);
-
-                            // Recreate creature mesh 
-                            scene.remove(creatureCircle);
-                            var creatureCircleGeometry = new THREE.CircleGeometry(creature.diameterSize,32);
-                            var material = new THREE.MeshBasicMaterial( { color: creature.color});
-                            creatureCircle = new THREE.Mesh(creatureCircleGeometry,material);
-                            creatureCircles[i] = creatureCircle;
-                            creatureCircle.position.set(creature.position.x,creature.position.y,0); 
-                            scene.add(creatureCircle);
-                            creatureObj = null;
-                            // Exit the for loop to avoid problems (iteration off deleted creatures)
-                            break;
-                        }
-                    }
-                    
-				}
-                var deletedCreature = null;
-                if(creatureToDelete != -1) {
-                    deletedCreature = creatures[creatureToDelete];
-                    creatures.splice(creatureToDelete,1);
-                    creatureCircles.splice(creatureToDelete,1);
-                    creatureToDelete = -1;
-                }
-                if(deadCreatureFlag) {
-                    // Respawn 3 new creatures from the big one 
-                    var x = deletedCreature.position.x, y = deletedCreature.position.y;
-                    for(var ii = 0; ii < CREATURE_RESPAWN_COUNT; ii++) {
-                        addCreature(null,x-(Math.random()*80),y-(Math.random()*80),deletedCreature.color);
-                    }
-                    // Respawn 3 food items -- Bad idea too much for gpu 
-                    if (RESPAWN_FOOD_ON_CREATURE_DEATH) {
-                        for(var ii = 0; ii < CREATURE_FOOD_RESPAWN_COUNT; ii++) {
-                            // Respawn some food 
-                            addFood(x-100,x+100,y-100,y+100);
-                            deletedCreature = null;
-                        }
-                    }
-                    
-                }
-                if(respawnFoodFlag) {
-                    addFood();
-                    respawnFoodFlag = false;
-                }
-
-				renderer.render( scene, camera );
-			}
-
-            ///////////////////////// NETWORK HANDLING /////////////////////////
-            /*
-                Called when the connection is first opened, simply return the app 
-                name to the server 
-            */
-            function onOpen(connection) {
-                  console.log("Connection with server opened");
-
-                  connection.sendMessage({
-                    type: 'hello',
-                    data: {
-                      game: 'game-of-life'
-                    }
-                  });
-            }
-            // When you receive something (including pings), this function will be called
-            // with the parsed JSON message all ready for you in parsedMessage.
-            function onMessage(connection, parsedMessage) {
-                
-                if(parsedMessage.type == "addCreature") {
-                    // The handler to add a creature 
-                    x = parseFloat(parsedMessage.data.x);
-                    y = parseFloat(parsedMessage.data.y);
-                    color = parseInt(parsedMessage.data.color);
-                    addCreature(null,x,y,color);
-                    console.log("Add creature");
-
-                }
-            }
-
-        </script>
-	</body>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <style>
+  body {
+    color: #000000;
+    min-height: 100%;
+    min-width: 100%;
+    font-family: Monospace;
+    font-size: 13px;
+    text-align: center;
+    background-color: #000000;
+    margin: 0px;
+    overflow: hidden;
+  }
+  
+  canvas {
+    width: 100%;
+    height: 100%;
+    background-color: black;
+  }
+  /*  
+      body:after
+      {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        background-image: url(mask-v2.png);
+        background-size: contain;
+        background-position: 0% 0%;
+        background-repeat: no-repeat;
+      }
+      */
+  
+  #info {
+    position: absolute;
+    top: 0px;
+    width: 100%;
+    padding: 5px;
+  }
+  </style>
+</head>
+
+<body>
+  <div id="container"></div>
+  <script src="file:///home/pmw/repos/scheduler/jquery-3.1.1.min.js"></script>
+  <script src="file:///home/pmw/repos/scheduler/scheduler.js"></script>
+  <script src="lib/three.js/build/three.js"></script>
+  <!-- Web socket connection library -->
+  <script src="lib/websocketConnection.js"></script>
+  <!-- ThreeJS Libs -->
+  <script src="lib/three.js/Projector.js"></script>
+  <script src="lib/three.js/CanvasRenderer.js"></script>
+  <script src="lib/three.js/stats.min.js"></script>
+  <script src="lib/random.js"></script>
+  <script>
+  /////////////////////// Constants //////////////////////
+  var LIMIT_DIAMETER = 80.0; // The diameter at witch the creatures explodes
+  var CREATURE_RESPAWN_COUNT = 5; // How many creatures are respawned when a large dies
+  var RESPAWN_FOOD_ON_CREATURE_DEATH = false; // Be carefull can end up heavy on gpu (in a very long term) 
+  var CREATURE_FOOD_RESPAWN_COUNT = 3; // Applied if above flag is set
+  var FOOD_ITEM_COLOR = 0xffffff; // Food is white by default. gives it a classic space invader feel
+  var STATS_METER_ON = false; // Should the stats meter be displayed ?
+  var RANDOMIZE_INTESITY_AND_DIRECTION = 1000; // How often should the creature randomize the behaviour (default 1000 cycles)
+  var DEBUG_GPU_FRAMES = false; // Show frames per second
+  var EAT_DISTANCE = 0.3; 
+
+  var ADD_PROBABILITY = 0.1;
+  var ADD_INTERVAL = 1000;
+  var ADD_IDLE_TIME = 30000;
+  var ADD_MAX_CREATURES = 10;
+
+  var WIGGLE_SPEED_MIN = 0.02;
+  var WIGGLE_SPEED_MAX = 0.08;
+  var WIGGLE_AMPLITUDE_MAX = Math.PI / 64;
+
+  var SCALE_SPEED_K = 10;
+  var SCALE_K = 0.9;
+
+  var INVINCIBLE_TIME = 10;
+
+  var BASE_CIRCLE_SIZE = 32;
+
+  /////////////////////// The creature ///////////////////
+  var Creature = function() {
+
+    var _diameterSize, _position = new THREE.Vector2(),
+      _movement = new THREE.Vector2();
+    var _worldWidth, _worldHeight;
+    var _i = 0;
+
+    var _targetScale = 0;
+
+    var _wiggleSpeed = Math.random() * (WIGGLE_SPEED_MAX - WIGGLE_SPEED_MIN) + WIGGLE_SPEED_MIN;
+    var _wiggleAt = 0;
+    var _wiggleAmplitude = Math.random() * WIGGLE_AMPLITUDE_MAX - WIGGLE_AMPLITUDE_MAX / 2;
+
+    this.scale = 0;
+    this.scaleSpeed = 0;
+    this.dead = false;
+
+    this.age = 0;
+
+    var _dying = false;
+
+    this.run = function() {
+      this.age++;
+      _wiggleAt += _wiggleSpeed;
+      if (_movement.x == 0 && _movement.y == 0) {
+        this.randomizeMovementVector();
+        this.randomizeMovementDirection();
+      }
+      this.move();
+      this.checkWorldBounds();
+      if (_diameterSize > LIMIT_DIAMETER) {
+        this.scaleSpeed += (_targetScale - this.scale) / SCALE_SPEED_K;
+        this.scaleSpeed *= SCALE_K;
+        this.scale += this.scaleSpeed;
+        if (this.scale <= 0) {
+          this.scale = 0;
+          this.dead = true;
+          console.log('dead')
+        }
+        return "dead";
+      }
+      if (_i == RANDOMIZE_INTESITY_AND_DIRECTION) {
+        this.randomizeMovementVector();
+        this.randomizeMovementDirection();
+        _i = 0;
+      }
+      _i++;
+
+      this.scaleSpeed += (_targetScale - this.scale) / SCALE_SPEED_K;
+      this.scaleSpeed *= SCALE_K;
+      this.scale += this.scaleSpeed;
+      if (this.scale <= 0.01) {
+        this.scale = 0.01;
+        this.dead = true;
+      }
+    };
+
+    this.move = function() {
+      var l = _movement.length();
+      var a = _movement.angle();
+      a += Math.sin(_wiggleAt) * _wiggleAmplitude;
+      _movement = new THREE.Vector2(Math.cos(a) * l, Math.sin(a) * l);
+      this.movement = _movement;
+      _position.add(_movement);
+      this.position = _position;
+    }
+
+    this.die = function() {
+      _targetScale = 0;
+      _dying = true;
+      console.log('die');
+    }
+
+    this.setColor = function(value) {
+      _color = value;
+      this.color = value;
+    };
+
+    this.setPosition = function(x, y) {
+      _position.x = x;
+      _position.y = y;
+      this.position = _position;
+    };
+
+    this.setSize = function(value) {
+      if (!_diameterSize) {
+        this.scale = value / BASE_CIRCLE_SIZE;
+      }
+      _diameterSize = value;
+      _targetScale = value / BASE_CIRCLE_SIZE;
+      this.diameterSize = value;
+    };
+
+    this.setMovementVector = function(x, y) {
+      _movement.set(x, y);
+      this.movement = _movement;
+    }
+
+    // Randomizes the intensity of the movement vector 
+    this.randomizeMovementVector = function(value) {
+
+      var ratio = _diameterSize / 100;
+      var ratio = 1.0 - ratio;
+      _movement.set((((Math.random() * 3) / 10) + ratio), ((Math.random() * 4) / 10) + ratio);
+      this.movement = _movement;
+    };
+
+    this.randomizeMovementDirection = function() {
+      if (Math.random() > 0.5) {
+        _movement.x *= -1;
+      }
+      if (Math.random() > 0.5) {
+        _movement.y *= -1;
+      }
+      this.movement = _movement;
+    }
+    
+    /* Set the world size */
+    this.setWorldSize = function(w, h) {
+      _worldWidth = w;
+      _worldHeight = h;
+      this.worldWidth = w;
+      this.worldHeight = h;
+
+    }
+
+    // Evaluate the distance between all food item and the creature
+    // check if food item is within the creature's reach 
+    this.closestFoodItem = function(foodItems) {
+        for (var i = 0; i < foodItems.length; i++) {
+          foodItem = foodItems[i];
+          distance = _position.distanceToSquared(foodItem.position);
+          if (distance - (_diameterSize * _diameterSize) - (foodItem.foodSize * foodItem.foodSize) < 1) {
+            return foodItem;
+          }
+
+        }
+        return null;
+      }
+      
+    // Evaluate the distance between all
+    // check if another creature is withn the creature's reach 
+    this.closestCreature = function(creatures) {
+      for (var i = 0; i < creatures.length; i++) {
+        creature = creatures[i];
+        if (creature == this || creature.age < INVINCIBLE_TIME)
+          continue;
+        distance = _position.distanceTo(creature.position);
+
+        if (distance + creature.diameterSize * EAT_DISTANCE < _diameterSize) {
+          if (_diameterSize >= creature.diameterSize) {
+            return creature;
+          }
+        }
+      }
+      return null;
+    }
+
+    // Avoids the creature from going out of bounds 
+    //(like the DVD logo on old-school DVD players) 
+    this.checkWorldBounds = function() {
+
+      halfX = _worldWidth / 2;
+      halfY = _worldHeight / 2;
+
+      if (_position.x + _diameterSize >= halfX) {
+        // The creature touched right wall
+        if (_movement.x > 0 && _movement.y < 0) {
+
+          this.randomizeMovementVector();
+          _movement.x *= -1;
+          _movement.y *= -1;
+
+        } else if (_movement.x >= 0 && _movement.y >= 0) {
+
+          this.randomizeMovementVector();
+          _movement.x *= -1;
+        }
+      }
+      if (_position.x - _diameterSize <= -halfX) {
+        // The creature touched the left wall 
+        if (_movement.x < 0 && _movement.y < 0) {
+          this.randomizeMovementVector();
+          _movement.y *= -1;
+        } else if (_movement.x <= 0 && _movement.y >= 0) {
+          this.randomizeMovementVector();
+        }
+      }
+      if (_position.y - _diameterSize <= -halfY) {
+        // The creature touched the lower limit 
+        if (_movement.x > 0 && _movement.y < 0) {
+
+          this.randomizeMovementVector();
+
+        } else if (_movement.x <= 0 && _movement.y <= 0) {
+          this.randomizeMovementVector();
+          _movement.x *= -1;
+        }
+
+      }
+      if (_position.y + _diameterSize >= halfY) {
+        // The creature touched the upper limit
+        if (_movement.x < 0 && _movement.y > 0) {
+
+          this.randomizeMovementVector();
+          _movement.y *= -1;
+          _movement.x *= -1;
+
+        } else if (_movement.x >= 0 && _movement.y >= 0) {
+
+          this.randomizeMovementVector();
+          _movement.y *= -1;
+        }
+
+      }
+      this.movement = _movement;
+
+    }
+
+  }
+
+  ///////////////////// The food item ////////////////////
+  var Food = function() {
+
+    var _position = new THREE.Vector2(),
+      _color = 0xffffff,
+      _foodSize;
+    this.setColor = function(value) {
+      _color = value;
+      this.color = value;
+    };
+    this.setPosition = function(x, y) {
+      _position.x = x;
+      _position.y = y;
+      this.position = _position;
+    };
+    this.setFoodSize = function(value) {
+      _foodSize = value;
+      this.foodSize = value;
+    };
+  }
+
+
+  var SCREEN_WIDTH = window.innerWidth,
+    SCREEN_HEIGHT = window.innerHeight,
+    SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2,
+    SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
+
+  // ThreeJS camera and scene    
+  var camera, scene, renderer;
+
+  // The Food and Creature instances 
+  var creatures, creature, foodItems, foodItem;
+
+  // ThreeJS circle objects
+  var creatureCircles, creatureCircle;
+  var foodCircles, foodCircle;
+
+  // Open persistent web socket connection to the server
+  var connection = new WebsocketConnection(
+    'jebediah.pimp-my-wall.ch',
+    8000, {
+      open: onOpen,
+      close: function() {},
+      message: onMessage
+    }, {
+      autoConnect: true,
+      autoReconnect: true
+    }
+  );
+
+  var circleGeometry = null;
+
+  var stats;
+  init();
+  animate();
+
+  function init() {
+
+    // Objects 
+    creatures = [];
+    foodItems = [];
+
+    // Graphics 
+    creatureCircles = [];
+    foodCircles = [];
+
+    // Init camera and scene
+    camera = new THREE.OrthographicCamera(SCREEN_WIDTH / -2, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, SCREEN_HEIGHT / -2, 1, 1e6);
+    camera.position.set(0, 0, 500);
+
+    scene = new THREE.Scene();
+    scene.add(camera);
+
+    // Create initial food circles 
+    for (var i = 0; i < 200; i++) {
+      addFood();
+    }
+
+    circleGeometry = new THREE.CircleGeometry(BASE_CIRCLE_SIZE, 32);
+
+    creature = new Creature();
+
+    renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setClearColor(0x000000, 0x1);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    document.addEventListener('mouseup', addCreature, false);
+    window.addEventListener('resize', onWindowResize, false);
+
+    document.body.appendChild(renderer.domElement);
+
+    // Comment the next 2 lines in a production enviroment
+    stats = new Stats();
+    if (DEBUG_GPU_FRAMES) {
+      document.getElementById('container').appendChild(stats.dom);
+    }
+
+  }
+
+  /*
+     Creates and adds a creature to the scene
+   */
+  function addCreature(event, x, y, color) {
+    console.log("addCreature")
+
+    if (event) {
+      mouseX = event.clientX - SCREEN_WIDTH_HALF;
+      mouseY = SCREEN_HEIGHT_HALF - event.clientY;
+      color = 0x00ff00;
+    } else {
+      mouseX = x;
+      mouseY = y;
+    }
+    creature = new Creature();
+    creature.setColor(color);
+    creature.setPosition(mouseX, mouseY);
+    creature.setSize(5);
+    creature.setWorldSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+    var creatureCircleGeometry = circleGeometry;
+    var material = new THREE.MeshBasicMaterial({
+      color: creature.color
+    });
+    creatureCircle = new THREE.Mesh(creatureCircleGeometry, material);
+    creatureCircle.position.set(creature.position.x, creature.position.y, 0);
+    creatureCircle.scale.set(creature.scale, creature.scale, creature.scale);
+
+
+    creatures[creatures.length] = creature;
+    creatureCircles[creatureCircles.length] = creatureCircle;
+    scene.add(creatureCircle);
+    return creature;
+  }
+
+  /*
+     Creates and adds food to the scene
+     if startX is not passed, then the food is place randomly on the screen
+  */
+  function addFood(startX, endX, startY, endY) {
+
+    if (!startX) {
+      startX = -SCREEN_WIDTH_HALF;
+      endX = SCREEN_WIDTH_HALF;
+      startY = -SCREEN_HEIGHT_HALF;
+      endY = SCREEN_HEIGHT_HALF;
+    }
+
+    foodItem = new Food();
+    foodItem.setFoodSize((Math.random() * 2) + 0.5);
+    foodItem.setPosition(getRandomIntInclusive(startX, endX), getRandomIntInclusive(startY, endY));
+    foodItem.color = FOOD_ITEM_COLOR;
+
+    foodItems[foodItems.length] = foodItem;
+
+    var foodCircleGeometry = new THREE.CircleGeometry(foodItem.foodSize, 8);
+    var material = new THREE.MeshBasicMaterial({
+      color: 0xffffff
+    });
+
+    foodCircle = new THREE.Mesh(foodCircleGeometry, material);
+    foodCircle.position.set(foodItem.position.x, foodItem.position.y, 0);
+
+    foodCircles[foodCircles.length] = foodCircle;
+    scene.add(foodCircle);
+
+    return foodItem;
+  }
+
+  function onWindowResize() {
+
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Update world size 
+    SCREEN_WIDTH = window.innerWidth;
+    SCREEN_HEIGHT = window.innerHeight;
+    SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
+    SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
+
+    // Reset world height on every creature
+    for (var i = 0; i < creatures.length; i++) {
+      creatures[i].setWorldSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+    }
+
+  }
+
+  function animate() {
+
+    requestAnimationFrame(animate);
+    stats.begin();
+    render();
+    stats.end();
+
+  }
+
+  //////////////////// Rendering + logic //////////////////////////  
+  function render() {
+
+    var creatureToDelete = -1;
+    var deadCreatureFlag = false;
+    var respawnFoodFlag = false;
+
+    for (var i = 0, il = creatures.length; i < il; i++) {
+
+      var creature = creatures[i];
+      var creatureCircle = creatureCircles[i];
+      creatureCircle.scale.set(creature.scale, creature.scale, creature.scale);
+      creatureCircle.position.copy(creature.position);
+      creatureCircle.position.z = 0;
+      res = creature.run();
+
+      if (creature.dead) {
+        creatureToDelete = i;
+        //Recreate 3 new small creatures 
+        deadCreatureFlag = true;
+        //Remove from scene
+        var creatureCircle = creatureCircles[i];
+        scene.remove(creatureCircle);
+        // Clean up after our mess :)
+        // creatureCircle.geometry.dispose();
+        creatureCircle.material.dispose();
+        console.log("Removed dead creature")
+        break;
+      }
+
+      if (res == "dead") {
+        console.log('calling die');
+        creature.die();
+      }
+
+      var foodObj = creature.closestFoodItem(foodItems);
+      var creatureObj = creature.closestCreature(creatures);
+
+      if (foodObj) {
+        // Eat the food item 
+        var index = foodItems.indexOf(foodObj);
+        if (index > -1) {
+          foodItems.splice(index, 1);
+          foodCircle = foodCircles[index];
+
+          scene.remove(foodCircle);
+          // Clean up after our mess :)
+          foodCircle.geometry.dispose();
+          foodCircle.material.dispose();
+
+          foodCircles.splice(index, 1);
+          creature.setSize(creature.diameterSize + foodObj.foodSize);
+
+          // Recreate creature mesh 
+          scene.remove(creatureCircle);
+          // Clean up after our mess :)
+          // creatureCircle.geometry.dispose();
+          creatureCircle.material.dispose();
+
+          var creatureCircleGeometry = circleGeometry;
+          var material = new THREE.MeshBasicMaterial({
+            color: creature.color
+          });
+          creatureCircle = new THREE.Mesh(creatureCircleGeometry, material);
+          creatureCircles[i] = creatureCircle;
+          creatureCircle.position.set(creature.position.x, creature.position.y, 0);
+          creatureCircle.scale.set(creature.scale, creature.scale, creature.scale);
+          scene.add(creatureCircle);
+          foodObj = false;
+          respawnFoodFlag = true;
+
+        }
+      }
+      if (creatureObj) {
+        var index = creatures.indexOf(creatureObj);
+        if (index > -1) {
+          // Eat the smaller creature
+          // Remove the target creature object
+          creatureToDelete = index;
+
+          // Remove the target creature mesh
+          targetCreatureCircle = creatureCircles[index];
+          scene.remove(targetCreatureCircle);
+          // targetCreatureCircle.geometry.dispose();
+          targetCreatureCircle.material.dispose()
+
+          // Creature becomes bigger
+          creature.setSize(creature.diameterSize + creatureObj.diameterSize);
+
+          // Recreate creature mesh 
+          scene.remove(creatureCircle);
+          // creatureCircle.geometry.dispose();
+          creatureCircle.material.dispose();
+
+          var creatureCircleGeometry = circleGeometry; //new THREE.CircleGeometry(creature.diameterSize, 32);
+          var material = new THREE.MeshBasicMaterial({
+            color: creature.color
+          });
+          creatureCircle = new THREE.Mesh(creatureCircleGeometry, material);
+          creatureCircles[i] = creatureCircle;
+          creatureCircle.position.set(creature.position.x, creature.position.y, 0);
+          creatureCircle.scale.set(creature.scale, creature.scale, creature.scale);
+          scene.add(creatureCircle);
+          creatureObj = null;
+          // Exit the for loop to avoid problems (iteration off deleted creatures)
+          break;
+        }
+      }
+
+    }
+    var deletedCreature = null;
+    if (creatureToDelete != -1) {
+      deletedCreature = creatures[creatureToDelete];
+      creatures.splice(creatureToDelete, 1);
+      creatureCircles.splice(creatureToDelete, 1);
+      creatureToDelete = -1;
+    }
+    if (deadCreatureFlag) {
+      // Respawn 3 new creatures from the big one 
+      var x = deletedCreature.position.x,
+        y = deletedCreature.position.y;
+      for (var ii = 0; ii < CREATURE_RESPAWN_COUNT; ii++) {
+        var addedCreature = addCreature(null, x + Math.random() * 40 - 20, y + Math.random() * 40 - 20, deletedCreature.color);
+        var a = Math.random() * Math.PI * 2;
+        var l = Math.random() * 4 + 2;
+        addedCreature.setMovementVector(Math.cos(a) * l, Math.sin(a) * l);
+      }
+      // Respawn 3 food items -- Bad idea too much for gpu 
+      if (RESPAWN_FOOD_ON_CREATURE_DEATH) {
+        for (var ii = 0; ii < CREATURE_FOOD_RESPAWN_COUNT; ii++) {
+          // Respawn some food 
+          addFood(x - 100, x + 100, y - 100, y + 100);
+          deletedCreature = null;
+        }
+      }
+
+    }
+    if (respawnFoodFlag) {
+      addFood();
+      respawnFoodFlag = false;
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  ///////////////////////// NETWORK HANDLING /////////////////////////
+  /*
+    Called when the connection is first opened, simply return the app 
+    name to the server 
+  */
+  function onOpen(connection) {
+    console.log("Connection with server opened");
+
+    connection.sendMessage({
+      type: 'hello',
+      data: {
+        game: 'game-of-life'
+      }
+    });
+  }
+  // When you receive something (including pings), this function will be called
+  // with the parsed JSON message all ready for you in parsedMessage.
+  var lastAdd = Date.now();
+  function onMessage(connection, parsedMessage) {
+
+    if (parsedMessage.type == "addCreature") {
+      // The handler to add a creature 
+      var x = parseFloat(parsedMessage.data.x) * SCREEN_WIDTH - SCREEN_WIDTH / 2;
+      var y = - parseFloat(parsedMessage.data.y) * SCREEN_HEIGHT + SCREEN_HEIGHT / 2;
+      var color = new THREE.Color('hsl(' + parsedMessage.data.h + ',' + parsedMessage.data.s + '%,' + parsedMessage.data.l + '%)');
+      addCreature(null, x, y, color.getHex());
+      lastAdd = Date.now();
+    }
+  }
+
+  setInterval(function () {
+    if (Date.now() - lastAdd > ADD_IDLE_TIME 
+      && creatures.length < ADD_MAX_CREATURES
+      && Math.random() < ADD_PROBABILITY) {
+      console.log("Eh")
+      var color = new THREE.Color('hsl(' + Math.floor(Math.random() * 360) + ',100%,60%)');
+      addCreature(
+        null, 
+        Math.random() * SCREEN_WIDTH - SCREEN_WIDTH / 2, 
+        Math.random() * SCREEN_HEIGHT - SCREEN_HEIGHT / 2,
+        color.getHex()
+      );
+    }
+  }, ADD_INTERVAL)
+  </script>
+</body>
+
 </html>
