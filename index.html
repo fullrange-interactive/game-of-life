@@ -44,6 +44,16 @@
     width: 100%;
     padding: 5px;
   }
+  #mask {
+    width: 100%;
+    margin: 0;
+    pointer-events: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    user-select: none;
+    visibility: hidden;
+  }
   </style>
 </head>
 
@@ -51,6 +61,7 @@
   <div id="container"></div>
   <script src="file:///home/pmw/repos/scheduler/jquery-3.1.1.min.js"></script>
   <script src="file:///home/pmw/repos/scheduler/scheduler.js"></script>
+  <script src="lib/jquery-3.1.1.min.js"></script>
   <script src="lib/three.js/build/three.js"></script>
   <!-- Web socket connection library -->
   <script src="lib/websocketConnection.js"></script>
@@ -476,17 +487,21 @@
   }
 
   function onWindowResize() {
-
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-
-    renderer.setSize(window.innerWidth, window.innerHeight);
-
     // Update world size 
-    SCREEN_WIDTH = window.innerWidth;
-    SCREEN_HEIGHT = window.innerHeight;
+    SCREEN_WIDTH = $('#mask').width();
+    SCREEN_HEIGHT = $('#mask').height();
     SCREEN_WIDTH_HALF = SCREEN_WIDTH / 2;
     SCREEN_HEIGHT_HALF = SCREEN_HEIGHT / 2;
+
+    camera.aspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+    camera.left = - SCREEN_WIDTH / 2;
+    camera.right = SCREEN_WIDTH / 2;
+    camera.top = SCREEN_HEIGHT / 2;
+    camera.bottom = - SCREEN_HEIGHT / 2;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+    renderer.setViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
 
     // Reset world height on every creature
     for (var i = 0; i < creatures.length; i++) {
@@ -691,7 +706,12 @@
       );
     }
   }, ADD_INTERVAL);
+
+  $(document).ready(function () {
+    onWindowResize();
+  })
   </script>
+  <img src="mask-v2.png" id="mask" />
 </body>
 
 </html>
