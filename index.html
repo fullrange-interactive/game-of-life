@@ -72,7 +72,8 @@
   <script src="lib/random.js"></script>
   <script>
   /////////////////////// Constants //////////////////////
-  var LIMIT_DIAMETER = 100.0; // The diameter at witch the creatures explodes
+  var LIMIT_DIAMETER = 160.0; // The diameter at witch the creatures explodes
+  var VERY_LIMIT_DIAMETER = 200;
   var CREATURE_RESPAWN_COUNT = 5; // How many creatures are respawned when a large dies
   var RESPAWN_FOOD_ON_CREATURE_DEATH = false; // Be carefull can end up heavy on gpu (in a very long term) 
   var CREATURE_FOOD_RESPAWN_COUNT = 3; // Applied if above flag is set
@@ -85,14 +86,14 @@
   var ADD_PROBABILITY = 0.1;
   var ADD_INTERVAL = 1000;
   var ADD_IDLE_TIME = 30000;
-  var ADD_MAX_CREATURES = 10;
+  var ADD_MAX_CREATURES = 20;
 
   var WIGGLE_SPEED_MIN = 0.02;
   var WIGGLE_SPEED_MAX = 0.08;
   var WIGGLE_AMPLITUDE_MAX = Math.PI / 64;
 
-  var SCALE_SPEED_K = 10;
-  var SCALE_K = 0.9;
+  var SCALE_SPEED_K = 8;
+  var SCALE_K = 0.8;
 
   var INVINCIBLE_TIME = 10;
 
@@ -166,6 +167,7 @@
     }
 
     this.die = function() {
+      console.log('die')
       _targetScale = 0;
       _dying = true;
     }
@@ -226,6 +228,9 @@
     // Evaluate the distance between all food item and the creature
     // check if food item is within the creature's reach 
     this.closestFoodItem = function(foodItems) {
+        if (_dying) {
+          return null;
+        }
         for (var i = 0; i < foodItems.length; i++) {
           foodItem = foodItems[i];
           distance = _position.distanceToSquared(foodItem.position);
@@ -240,6 +245,9 @@
     // Evaluate the distance between all
     // check if another creature is withn the creature's reach 
     this.closestCreature = function(creatures) {
+      if (_dying) {
+        return null;
+      }
       for (var i = 0; i < creatures.length; i++) {
         creature = creatures[i];
         if (creature == this || creature.age < INVINCIBLE_TIME)
@@ -435,7 +443,7 @@
     creature = new Creature();
     creature.setColor(color);
     creature.setPosition(mouseX, mouseY);
-    creature.setSize(30);
+    creature.setSize(20);
     creature.setWorldSize(SCREEN_WIDTH, SCREEN_HEIGHT);
     var creatureCircleGeometry = circleGeometry;
     var material = new THREE.MeshBasicMaterial({
@@ -466,7 +474,7 @@
     }
 
     foodItem = new Food();
-    foodItem.setFoodSize((Math.random() * 2) + 0.5);
+    foodItem.setFoodSize((Math.random() * 4) + 2);
     foodItem.setPosition(getRandomIntInclusive(startX, endX), getRandomIntInclusive(startY, endY));
     foodItem.color = FOOD_ITEM_COLOR;
 
