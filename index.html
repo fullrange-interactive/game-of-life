@@ -200,7 +200,7 @@
     // Randomizes the intensity of the movement vector 
     this.randomizeMovementVector = function(value) {
 
-      var ratio = _diameterSize / 100;
+      var ratio = _diameterSize / 200;
       var ratio = 1.0 - ratio;
       _movement.set((((Math.random() * 3) / 10) + ratio), ((Math.random() * 4) / 10) + ratio);
       this.movement = _movement;
