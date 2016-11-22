@@ -72,7 +72,7 @@
   <script src="lib/random.js"></script>
   <script>
   /////////////////////// Constants //////////////////////
-  var LIMIT_DIAMETER = 80.0; // The diameter at witch the creatures explodes
+  var LIMIT_DIAMETER = 100.0; // The diameter at witch the creatures explodes
   var CREATURE_RESPAWN_COUNT = 5; // How many creatures are respawned when a large dies
   var RESPAWN_FOOD_ON_CREATURE_DEATH = false; // Be carefull can end up heavy on gpu (in a very long term) 
   var CREATURE_FOOD_RESPAWN_COUNT = 3; // Applied if above flag is set
@@ -96,7 +96,7 @@
 
   var INVINCIBLE_TIME = 10;
 
-  var BASE_CIRCLE_SIZE = 64;
+  var BASE_CIRCLE_SIZE = 32;
 
   /////////////////////// The creature ///////////////////
   var Creature = function() {
@@ -435,7 +435,7 @@
     creature = new Creature();
     creature.setColor(color);
     creature.setPosition(mouseX, mouseY);
-    creature.setSize(5);
+    creature.setSize(30);
     creature.setWorldSize(SCREEN_WIDTH, SCREEN_HEIGHT);
     var creatureCircleGeometry = circleGeometry;
     var material = new THREE.MeshBasicMaterial({
