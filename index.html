@@ -99,6 +99,8 @@
 
   var BASE_CIRCLE_SIZE = 32;
 
+  var FLOOD_PROTECTION = 300;
+
   /////////////////////// The creature ///////////////////
   var Creature = function() {
 
@@ -689,9 +691,18 @@
   // When you receive something (including pings), this function will be called
   // with the parsed JSON message all ready for you in parsedMessage.
   var lastAdd = Date.now();
+
+  var lastTimesPerUser = {};
+
   function onMessage(connection, parsedMessage) {
 
     if (parsedMessage.type == "addCreature") {
+      if (typeof lastTimesPerUser[parsedMessage.data.userId] != 'undefined') {
+        if (Date.now() - lastTimesPerUser[parsedMessage.data.userId] < FLOOD_PROTECTION) {
+          return;
+        }
+      }
+      lastTimesPerUser[parsedMessage.data.userId] = Date.now();
       // The handler to add a creature 
       var x = parseFloat(parsedMessage.data.x) * SCREEN_WIDTH - SCREEN_WIDTH / 2;
       var y = - parseFloat(parsedMessage.data.y) * SCREEN_HEIGHT + SCREEN_HEIGHT / 2;
